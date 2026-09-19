@@ -1,24 +1,27 @@
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 
-const databaseUrl = process.env.DATABASE_URL;
-
-if (!databaseUrl) {
-  throw new Error("DATABASE_URL is required");
-}
-
 const globalForDb = globalThis as typeof globalThis & {
   __arenaNextJsPostgresqlPool?: Pool;
 };
 
-export const pool =
-  globalForDb.__arenaNextJsPostgresqlPool ??
-  new Pool({
-    connectionString: databaseUrl,
-  });
-
-if (process.env.NODE_ENV !== "production") {
-  globalForDb.__arenaNextJsPostgresqlPool = pool;
+function getPool(): Pool {
+  const databaseUrl = process.env.DATABASE_URL;
+  if (!databaseUrl) {
+    throw new Error("DATABASE_URL is required");
+  }
+  if (!globalForDb.__arenaNextJsPostgresqlPool) {
+    globalForDb.__arenaNextJsPostgresqlPool = new Pool({ connectionString: databaseUrl });
+  }
+  return globalForDb.__arenaNextJsPostgresqlPool;
 }
 
-export const db = drizzle(pool);
+// Reading process.env lazily (via a Proxy) means importing this module never
+// throws at build time when DATABASE_URL isn't set yet — only using `db`
+// against a real connection does.
+export const db: ReturnType<typeof drizzle> = new Proxy({} as ReturnType<typeof drizzle>, {
+  get(_target, prop, receiver) {
+    const real = drizzle(getPool());
+    return Reflect.get(real, prop, receiver);
+  },
+});
