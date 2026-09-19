@@ -227,6 +227,13 @@ function buildFixes(result: AnalyzeResult): Fix[] {
   return fixes;
 }
 
+// The realistic score if every listed fix were applied — tied to the actual
+// fix list, instead of the API's flat "+15" placeholder.
+function achievablePotential(result: AnalyzeResult, fixes: Fix[]): number {
+  const totalGain = fixes.reduce((sum, item) => sum + Number(item.gain.replace("+", "")), 0);
+  return Math.min(100, result.score + totalGain);
+}
+
 function ScoreRing({ score, size = "large", color = "#e2f3ef" }: { score: number; size?: "large" | "small"; color?: string }) {
   const dimension = size === "large" ? 168 : 84;
   const stroke = size === "large" ? 10 : 7;
@@ -308,6 +315,7 @@ function EmptyState({ onNewCheck, title = "Run your first CV check", description
 
 function Overview({ result, fixes, fileName, targetRole, region, setPage, onNewCheck }: { result: AnalyzeResult | null; fixes: Fix[]; fileName: string; targetRole: string; region: string; setPage: (page: PageKey) => void; onNewCheck: () => void }) {
   if (!result) return <EmptyState onNewCheck={onNewCheck} />;
+  const potential = achievablePotential(result, fixes);
   const tone = result.score >= 80 ? "green" : result.score >= 60 ? "amber" : "red";
   const tiles: { label: string; score: number; icon: IconName; note: string; page: PageKey }[] = [
     { label: "ATS compatibility", score: result.sections.ats, icon: "ats", note: result.checks.hasContact && result.checks.hasExperience && result.checks.hasEducation ? "Contact, experience, and education detected" : "Missing one or more standard sections", page: "ats" },
@@ -324,8 +332,8 @@ function Overview({ result, fixes, fileName, targetRole, region, setPage, onNewC
             <ScoreRing score={result.score} />
             <div className="min-w-0 flex-1">
               <Badge tone={tone}><span className={`h-1.5 w-1.5 rounded-full ${tone === "green" ? "bg-emerald-500" : tone === "amber" ? "bg-amber-500" : "bg-red-500"}`} /> {tone === "green" ? "Good foundation" : tone === "amber" ? "Needs work" : "Needs significant work"}</Badge>
-              <h2 className="mt-4 max-w-[390px] text-[23px] font-semibold leading-[1.15] tracking-[-0.04em] text-white">{result.missingTerms.length ? `${result.missingTerms.length} missing keyword${result.missingTerms.length === 1 ? "" : "s"} and some evidence gaps to close.` : "Solid keyword coverage — focus on evidence next."}</h2>
-              <p className="mt-3 max-w-[470px] text-[12px] leading-5 text-slate-300">This score is computed from the CV text and job description you provided — not a template. See the fix plan for concrete, generic next steps.</p>
+              <h2 className="mt-4 max-w-[390px] text-[23px] font-semibold leading-[1.15] tracking-[-0.04em] text-white">{result.missingTerms.length ? `${result.missingTerms.length} missing keyword${result.missingTerms.length === 1 ? "" : "s"} and some evidence gaps to close.` : result.matchedTerms.length ? "Solid keyword coverage — focus on evidence next." : "No job description yet — add one to unlock keyword matching."}</h2>
+              <p className="mt-3 max-w-[470px] text-[12px] leading-5 text-slate-300">{result.matchedTerms.length + result.missingTerms.length > 0 ? "This score is computed from the CV text and job description you provided — not a template. See the fix plan for concrete, generic next steps." : "This score only reflects structure and content checks so far. Run another check with a job description pasted in to see keyword-based fixes too."}</p>
               <div className="mt-5 flex flex-wrap gap-2">
                 <button onClick={() => setPage("fixes")} className="button-light">View priority fixes <Icon name="arrow" size={14} /></button>
                 <button onClick={() => setPage("methodology")} className="button-ghost-light">How this score works <Icon name="info" size={14} /></button>
@@ -333,7 +341,7 @@ function Overview({ result, fixes, fileName, targetRole, region, setPage, onNewC
             </div>
           </div>
           <div className="relative mt-7 grid grid-cols-3 gap-2 border-t border-white/10 pt-4 max-[560px]:grid-cols-1">
-            <div><div className="text-[10px] uppercase tracking-[.12em] text-slate-400">Potential</div><div className="mt-1 text-[17px] font-semibold text-[#b9efe4]">{result.potentialScore} <span className="text-[11px] font-normal text-slate-400">+{result.potentialScore - result.score} pts</span></div></div>
+            <div><div className="text-[10px] uppercase tracking-[.12em] text-slate-400">Potential</div><div className="mt-1 text-[17px] font-semibold text-[#b9efe4]">{potential} <span className="text-[11px] font-normal text-slate-400">+{potential - result.score} pts</span></div></div>
             <div><div className="text-[10px] uppercase tracking-[.12em] text-slate-400">Confidence</div><div className="mt-1 text-[17px] font-semibold text-white capitalize">{result.confidence}</div></div>
             <div><div className="text-[10px] uppercase tracking-[.12em] text-slate-400">Rule set</div><div className="mt-1 text-[17px] font-semibold text-white">v{result.ruleVersion}</div></div>
           </div>
@@ -466,10 +474,11 @@ function FixesPage({ result, fixes, notify, onNewCheck }: { result: AnalyzeResul
   if (!result) return <EmptyState onNewCheck={onNewCheck} />;
   const toggle = (id: number) => { setDone((old) => (old.includes(id) ? old.filter((item) => item !== id) : [...old, id])); if (!done.includes(id)) notify("Fix marked complete"); };
   const totalGain = fixes.filter((item) => !done.includes(item.id)).reduce((sum, item) => sum + Number(item.gain.replace("+", "")), 0);
+  const potential = achievablePotential(result, fixes);
   return (
     <>
       <section className="mb-5 grid grid-cols-[1.4fr_1fr] gap-5 max-[1000px]:grid-cols-1">
-        <div className="panel p-6"><div className="flex items-center justify-between"><div><p className="section-kicker">Completion</p><h2 className="panel-title">Turn {result.score} into {result.potentialScore}</h2></div><div className="text-right"><div className="text-[25px] font-semibold tracking-[-.06em] text-[#168f79]">{done.length}/{fixes.length}</div><div className="text-[10px] text-[#95a0a6]">actions complete</div></div></div><div className="mt-5 h-2 overflow-hidden rounded-full bg-[#edf0f1]"><div className="h-full rounded-full bg-[#18a991] transition-all" style={{ width: `${fixes.length ? (done.length / fixes.length) * 100 : 0}%` }} /></div></div>
+        <div className="panel p-6"><div className="flex items-center justify-between"><div><p className="section-kicker">Completion</p><h2 className="panel-title">Turn {result.score} into {potential}</h2></div><div className="text-right"><div className="text-[25px] font-semibold tracking-[-.06em] text-[#168f79]">{done.length}/{fixes.length}</div><div className="text-[10px] text-[#95a0a6]">actions complete</div></div></div><div className="mt-5 h-2 overflow-hidden rounded-full bg-[#edf0f1]"><div className="h-full rounded-full bg-[#18a991] transition-all" style={{ width: `${fixes.length ? (done.length / fixes.length) * 100 : 0}%` }} /></div></div>
         <div className="fix-quote rounded-[18px] p-6 text-white"><Icon name="spark" size={20} /><h3 className="mt-4 text-[17px] font-semibold">Fix signal, not decoration.</h3><p className="mt-2 text-[11px] leading-5 text-slate-300">The highest gains come from parse reliability, exact terms, and verifiable outcomes — not from changing colors.</p></div>
       </section>
       <section className="panel overflow-hidden"><div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#edf0f1] px-6 py-5"><div><p className="section-kicker">Prioritized by score gain</p><h2 className="panel-title">Your action list</h2></div></div><div className="divide-y divide-[#edf0f1]">{fixes.map((fix) => <div key={fix.id} className={`flex items-start gap-4 px-6 py-5 transition ${done.includes(fix.id) ? "bg-[#fbfcfc] opacity-60" : ""}`}><button onClick={() => toggle(fix.id)} className={`mt-0.5 grid h-6 w-6 shrink-0 place-items-center rounded-md border ${done.includes(fix.id) ? "border-[#21a78f] bg-[#21a78f] text-white" : "border-[#cbd6d7] text-transparent hover:border-[#21a78f]"}`}><Icon name="check" size={14} strokeWidth={2.5} /></button><div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><span className={`text-[12px] font-semibold ${done.includes(fix.id) ? "text-[#7c8a90] line-through" : "text-[#344652]"}`}>{fix.title}</span><Badge tone={fix.severity === "critical" || fix.severity === "high" ? "red" : fix.severity === "medium" ? "amber" : "neutral"}>{fix.severity}</Badge></div><p className="mt-1.5 max-w-3xl text-[11px] leading-5 text-[#7d8991]">{fix.detail}</p></div><div className="shrink-0 text-right"><div className="text-[16px] font-semibold text-[#168f79]">{fix.gain}</div><div className="mt-1 text-[9px] uppercase tracking-[.08em] text-[#a1aaaf]">est. gain</div></div></div>)}</div><div className="flex items-center justify-between bg-[#f7faf9] px-6 py-4 text-[11px] text-[#72818a]"><span><b className="text-[#2c4a53]">{totalGain} points</b> remain in the current plan</span></div></section>
@@ -515,7 +524,7 @@ function ReportsPage({ result, fixes, notify, onNewCheck }: { result: AnalyzeRes
     const content = [
       "CV SIGNAL · AUDIT",
       "",
-      `Score: ${result.score}/100 · Potential: ${result.potentialScore}/100`,
+      `Score: ${result.score}/100 · Potential if all fixes applied: ${achievablePotential(result, fixes)}/100`,
       `Confidence: ${result.confidence} · Rule set: v${result.ruleVersion}`,
       `Word count: ${result.wordCount}`,
       "",
